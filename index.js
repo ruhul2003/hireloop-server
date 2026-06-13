@@ -1,5 +1,3 @@
-
-
 const express = require('express');
 const app = express();
 const port = 5000;
@@ -9,7 +7,7 @@ require('dotenv').config();
 app.use(cors());
 app.use(express.json());
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const uri = process.env.MONGODB_URI;
 
@@ -37,22 +35,90 @@ async function run() {
     const companyCollection = database.collection("companies");
 
 
-    app.get('/api/jobs', async (req, res) => {
+ // GET jobs
+app.get('/api/jobs', async (req, res) => {
+    try {
         const query = {};
-        if(req.query.companyId){
+        
+        if (req.query.companyId) {
             query.companyId = req.query.companyId;
         }
-        if(req.query.status){
+        if (req.query.status) {
             query.status = req.query.status;
         }
+
         const cursor = jobCollection.find(query);
         const result = await cursor.toArray();
-        res.send(result);
+        
+        res.json(result);           // ← Better to use res.json()
+    } catch (error) {
+        console.error("Error fetching jobs:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// POST job
+app.post('/api/jobs', async (req, res) => {
+    try {
+        const job = req.body;
+
+        const newJob ={
+          ...job,
+          createdAt: new Date()
+        }
+        
+        // === IMPORTANT DEBUG LOG ===
+        console.log("=== JOB PAYLOAD RECEIVED ===");
+        console.log(JSON.stringify(job, null, 2));
+
+        if (!job.companyId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "companyId is required to post a job" 
+            });
+        }
+
+        const result = await jobCollection.insertOne(newJob);
+        
+        res.json({ 
+            success: true, 
+            insertedId: result.insertedId 
+        });
+    } catch (error) {
+        console.error("Error posting job:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/jobs/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = {
+                _id: new ObjectId(id)
+            }
+            const result = await jobCollection.findOne(query);
+            res.send(result);
+            console.log(result);
+        })
+
+
+     //Company related apis
+
+     app.post('/api/companies', async (req, res) => {
+       const company = req.body;
+       const newCompany = {
+         ...company,
+         createdAt: new Date()
+       }
+       const result = await companyCollection.insertOne(newCompany);
+       res.send(result);
      });
 
-     app.post('/api/jobs', async (req, res) => {
-        const job = req.body;
-        const result = await jobCollection.insertOne(job);
+     app.get('/api/my/companies', async (req, res) => {
+        const query = {};
+        if(req.query.recruiterId){
+          query.recruiterId = req.query.recruiterId;
+        }
+        const result = await companyCollection.findOne(query);
         res.send(result);
      });
 
