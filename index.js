@@ -1,8 +1,8 @@
 const express = require("express");
-const app = express();
-const port = process.env.PORT || 5000;
 const cors = require("cors");
 require("dotenv").config();
+
+const app = express();
 
 const allowedOrigins = [
   "http://localhost:3000",
@@ -28,13 +28,6 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (req, res) => {
   res.send("Server is running ✅");
-});
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-app.get("/", (req, res) => {
-  res.send("Hello World! Server is running.");
 });
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -94,7 +87,6 @@ async function run() {
           createdAt: new Date(),
         };
 
-        // === IMPORTANT DEBUG LOG ===
         console.log("=== JOB PAYLOAD RECEIVED ===");
         console.log(JSON.stringify(job, null, 2));
 
@@ -128,29 +120,27 @@ async function run() {
     });
 
     // subscription related
-
     app.post("/api/subscription", async (req, res) => {
       const data = req.body;
 
-        const subInfo = {
-          ...data,
-          createdAt: new Date(),
-        }
+      const subInfo = {
+        ...data,
+        createdAt: new Date(),
+      };
       const result = await subscriptionCollection.insertOne(subInfo);
       res.send(result);
 
-      const filter = {email:data.email};
+      const filter = {email: data.email};
       const updateDocument = {
-        $set:{
-          plan:data.planId,
+        $set: {
+          plan: data.planId,
         },
       };
-      const updateResult = await userscollection.updateOne(filter,updateDocument);
+      const updateResult = await userscollection.updateOne(filter, updateDocument);
       res.send(updateResult);
     });
 
     // Application related
-
     app.get('/api/applications', async (req, res) => {
       try {
         const query = {};
@@ -175,13 +165,11 @@ async function run() {
           return res.status(400).json({ success: false, message: "jobId and applicantId are required" });
         }
 
-        // Check for duplicate application
         const existing = await applicationColection.findOne({ jobId, applicantId });
         if (existing) {
           return res.status(400).json({ success: false, message: "You have already applied for this job" });
         }
 
-        // Fetch job details for denormalized snapshot storage
         let jobDetails = {};
         try {
           const job = await jobCollection.findOne({ _id: new ObjectId(jobId) });
@@ -221,56 +209,51 @@ async function run() {
       }
     });
 
-    // User related
-
-    // GET user profile
-app.get("/api/users/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const user = await userscollection.findOne({ _id: new ObjectId(id) });
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// PATCH update user profile
-app.patch("/api/users/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const { fullName, email, title, skills } = req.body;
-
-    const updateDoc = {
-      $set: {
-        fullName,
-        email,
-        title,
-        skills: skills || [],
-        updatedAt: new Date()
+    // User related - GET user profile
+    app.get("/api/users/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const user = await userscollection.findOne({ _id: new ObjectId(id) });
+        if (!user) return res.status(404).json({ success: false, message: "User not found" });
+        res.json(user);
+      } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
       }
-    };
+    });
 
-    const result = await userscollection.updateOne(
-      { _id: new ObjectId(id) },
-      updateDoc
-    );
+    // PATCH update user profile
+    app.patch("/api/users/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { fullName, email, title, skills } = req.body;
 
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
+        const updateDoc = {
+          $set: {
+            fullName,
+            email,
+            title,
+            skills: skills || [],
+            updatedAt: new Date()
+          }
+        };
 
-    res.json({ success: true, modifiedCount: result.modifiedCount });
-  } catch (error) {
-    console.error("Update error:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+        const result = await userscollection.updateOne(
+          { _id: new ObjectId(id) },
+          updateDoc
+        );
 
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ success: false, message: "User not found" });
+        }
 
+        res.json({ success: true, modifiedCount: result.modifiedCount });
+      } catch (error) {
+        console.error("Update error:", error);
+        res.status(500).json({ success: false, message: error.message });
+      }
+    });
 
     // Saved jobs related
-
     app.get('/api/saved-jobs', async (req, res) => {
       try {
         const query = {};
@@ -294,13 +277,11 @@ app.patch("/api/users/:id", async (req, res) => {
           return res.status(400).json({ success: false, message: "jobId and userId are required" });
         }
 
-        // Check if already saved
         const existing = await savedJobsCollection.findOne({ jobId, userId });
         if (existing) {
           return res.status(400).json({ success: false, message: "Job already saved" });
         }
 
-        // Fetch job details for denormalized snapshot storage
         let jobDetails = {};
         try {
           const job = await jobCollection.findOne({ _id: new ObjectId(jobId) });
@@ -350,17 +331,15 @@ app.patch("/api/users/:id", async (req, res) => {
     });
 
     app.get("/api/plans", async (req, res) => {
-      const query = {}
+      const query = {};
       if(req.query.plan_id){
-        query.id = req.query.plan_id
+        query.id = req.query.plan_id;
       }
       const plan = await plansCollection.findOne(query);
       res.send(plan);
-      
     });
 
     //Company related apis
-
     app.post("/api/companies", async (req, res) => {
       const company = req.body;
       const newCompany = {
@@ -371,42 +350,38 @@ app.patch("/api/users/:id", async (req, res) => {
       res.send(result);
     });
 
-app.get("/api/companies", async (req, res) => {
-  try {
-    const { recruiterId, search } = req.query;
-    const query = {};
+    app.get("/api/companies", async (req, res) => {
+      try {
+        const { recruiterId, search } = req.query;
+        const query = {};
 
-    // 1. Recruiter ID diye filter (jodi thake)
-    if (recruiterId) {
-      query.recruiterId = recruiterId;
-    }
+        if (recruiterId) {
+          query.recruiterId = recruiterId;
+        }
 
-    // 2. Search integration (Name, Industry, ba Location er upor query)
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { industry: { $regex: search, $options: "i" } },
-        { location: { $regex: search, $options: "i" } }
-      ];
-    }
+        if (search) {
+          query.$or = [
+            { name: { $regex: search, $options: "i" } },
+            { industry: { $regex: search, $options: "i" } },
+            { location: { $regex: search, $options: "i" } }
+          ];
+        }
 
-    // find().toArray() use kora hoyeche jate sob data array akare ashay
-    const result = await companyCollection.find(query).toArray();
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: "Error fetching companies", error });
-  }
-});
+        const result = await companyCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching companies", error });
+      }
+    });
 
     await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!",
-    );
-  } finally {
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+  } catch (error) {
+    console.error("MongoDB Connection Error:", error);
   }
 }
+
 run().catch(console.dir);
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
-});
+// Export for Vercel Serverless
+module.exports = app;
