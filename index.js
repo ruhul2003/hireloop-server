@@ -4,6 +4,7 @@ const port = process.env.PORT || 5000;
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const allowedOrigins = [
   "http://localhost:3000",
@@ -30,7 +31,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Root Health Check Route
 app.get("/", (req, res) => {
-  res.send("Server is running ✅");
+  res.send("Server is running");
 });
 
 // MongoDB Client Initialization
@@ -53,7 +54,6 @@ let plansCollection;
 let subscriptionCollection;
 let savedJobsCollection;
 
-// Shared lazy connection logic for Serverless Environments
 async function connectDB() {
   if (!db) {
     await client.connect();
@@ -73,7 +73,6 @@ async function connectDB() {
   return db;
 }
 
-// Middleware to guarantee database connection before routing requests
 app.use(async (req, res, next) => {
   try {
     await connectDB();
@@ -84,9 +83,7 @@ app.use(async (req, res, next) => {
   }
 });
 
-// =========================================================================
 // API ROUTES (Synchronously registered outside connection handlers)
-// =========================================================================
 
 // GET jobs
 app.get("/api/jobs", async (req, res) => {
@@ -174,7 +171,6 @@ app.post("/api/subscription", async (req, res) => {
     };
     const updateResult = await userscollection.updateOne(filter, updateDocument);
     
-    // Consolidated single integrated response
     res.json({
       success: true,
       subscriptionResult: result,
@@ -211,13 +207,11 @@ app.post('/api/applications', async (req, res) => {
       return res.status(400).json({ success: false, message: "jobId and applicantId are required" });
     }
 
-    // Check for duplicate application
     const existing = await applicationColection.findOne({ jobId, applicantId });
     if (existing) {
       return res.status(400).json({ success: false, message: "You have already applied for this job" });
     }
 
-    // Fetch job details for denormalized snapshot storage
     let jobDetails = {};
     try {
       const job = await jobCollection.findOne({ _id: new ObjectId(jobId) });
@@ -332,7 +326,6 @@ app.post('/api/saved-jobs', async (req, res) => {
       return res.status(400).json({ success: false, message: "Job already saved" });
     }
 
-    // Fetch job details for denormalized snapshot storage
     let jobDetails = {};
     try {
       const job = await jobCollection.findOne({ _id: new ObjectId(jobId) });
@@ -409,6 +402,107 @@ app.post("/api/companies", async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+});
+
+// GET companies with search support
+app.get("/api/companies", async (req, res) => {
+    try {
+        const { search } = req.query;
+
+        let query = {};
+
+        if (search && search.trim() !== '') {
+            const searchRegex = new RegExp(search.trim(), 'i');
+
+            query = {
+                $or: [
+                    { name: searchRegex },
+                    { industry: searchRegex },
+                    { location: searchRegex },
+                    { description: searchRegex },
+                    { tagline: searchRegex }
+                ]
+            };
+        }
+
+        const companies = await companyCollection.find(query)
+            .sort({ createdAt: -1 })     // Newest first
+            .toArray();
+
+        res.json(companies); // Better to use .json() instead of .send()
+    } catch (error) {
+        console.error("Error fetching companies:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});
+
+// ====================== ACTIVATE SUBSCRIPTION ======================
+app.post('/api/activate-subscription', async (req, res) => {
+    try {
+        const { session_id } = req.body;
+
+        if (!session_id) {
+            return res.status(400).json({ success: false, message: "Session ID is required" });
+        }
+
+        // Initialize Stripe inside the route (safer for Express)
+        const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+        const session = await stripe.checkout.sessions.retrieve(session_id);
+
+        if (session.payment_status !== 'paid') {
+            return res.status(400).json({ success: false, message: "Payment not completed" });
+        }
+
+        const planId = session.metadata?.planId;
+        const email = session.customer_details?.email;
+
+        if (!planId || !email) {
+            return res.status(400).json({ success: false, message: "Missing plan or email data" });
+        }
+
+        const subInfo = {
+            stripeSessionId: session.id,
+            email: email,
+            planId: planId,
+            status: 'active',
+            createdAt: new Date(),
+            subscriptionStart: new Date(),
+        };
+
+        // Save subscription
+        await subscriptionCollection.insertOne(subInfo);
+
+        // Update user plan
+        await userscollection.updateOne(
+            { email: email },
+            { 
+                $set: { 
+                    plan: planId, 
+                    subscriptionStatus: 'active', 
+                    updatedAt: new Date() 
+                } 
+            }
+        );
+
+        console.log(`✅ Subscription activated for ${email} - Plan: ${planId}`);
+
+        res.json({ 
+            success: true, 
+            message: "Subscription activated successfully",
+            planId 
+        });
+
+    } catch (error) {
+        console.error("Activate subscription error:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message || "Internal server error" 
+        });
+    }
 });
 
 // GET companies with filter and query matching
